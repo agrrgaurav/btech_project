@@ -63,12 +63,12 @@ engine.setProperty('rate',178)
 #*************************************wolframalpha api id******************************************
 
 
-app_id = 'WGUU35-XVLU6GVAX3'
+app_id = '#'
 
 
 #************************************open weathermap api***********************************
 
-weather_api_id = '52da3398c2669115baf8858f9953e328'
+weather_api_id = '#'
 
 
 
