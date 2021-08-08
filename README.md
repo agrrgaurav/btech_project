@@ -28,6 +28,7 @@
   * Finding information about any person or place
   * finding meaning of any word and many more features
   
+Setup
  
  * Create wolframalpha account and add your api id to jarvis.py
  * Create twilio account and add your twilio id and authentication token to app id section
