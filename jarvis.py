@@ -2,6 +2,22 @@
 #from selenium.webdriver.common.keys import Keys
 #from selenium.webdriver.chrome.options import Options
 
+import pandas as pd
+import numpy as np
+import nltk
+nltk.download('stopwords')
+from nltk.corpus import stopwords
+from textblob import Word
+import re
+from sklearn import preprocessing
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics import accuracy_score
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.linear_model import SGDClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 
 import pyttsx3 # used to convert text to speech
 import speech_recognition as sr #used to convert speech to text
@@ -168,16 +184,114 @@ def startup():
     speak("Now I am online")
     hour = int(datetime.datetime.now().hour)
     if 0 <= hour <= 12:
-        speak("Good Morning")
+        #speak("Good Morning")
     elif 12 < hour < 18:
-        speak("Good afternoon")
+        #speak("Good afternoon")
     else:
-        speak("Good evening")
+        #speak("Good evening")
     c_time = curr_time()
     speak(f"Currently it is {c_time}")
-    speak("I am Jarvis. Online and ready sir. Please tell me how may I help you")
+    speak("I am Jarvis. Online and ready sir. How are you feeling today?")
 
     # function to take command from user ( speech to text )
+    
+    
+    
+def moodDetect(inputs) -> object:
+    data = pd.read_csv('text_emotion.csv')
+
+    data = data.drop('author', axis=1)
+
+    # Dropping rows with other emotion labels
+    data = data.drop(data[data.sentiment == 'anger'].index)
+    data = data.drop(data[data.sentiment == 'boredom'].index)
+    data = data.drop(data[data.sentiment == 'enthusiasm'].index)
+    data = data.drop(data[data.sentiment == 'empty'].index)
+    data = data.drop(data[data.sentiment == 'fun'].index)
+    data = data.drop(data[data.sentiment == 'relief'].index)
+    data = data.drop(data[data.sentiment == 'surprise'].index)
+    data = data.drop(data[data.sentiment == 'love'].index)
+    data = data.drop(data[data.sentiment == 'hate'].index)
+    data = data.drop(data[data.sentiment == 'neutral'].index)
+    data = data.drop(data[data.sentiment == 'worry'].index)
+    data['content'] = data['content'].apply(lambda x: " ".join(x.lower() for x in x.split()))
+
+    # Removing Punctuation, Symbols
+    data['content'] = data['content'].str.replace('[^\w\s]',' ')
+
+    # Removing Stop Words using NLTK
+    from nltk.corpus import stopwords
+    stop = stopwords.words('english')
+    data['content'] = data['content'].apply(lambda x: " ".join(x for x in x.split() if x not in stop))
+
+    #Lemmatisation
+    from textblob import Word
+    data['content'] = data['content'].apply(lambda x: " ".join([Word(word).lemmatize() for word in x.split()]))
+    #Correcting Letter Repetitions
+
+    def de_repeat(text):
+        pattern = re.compile(r"(.)\1{2,}")
+        return pattern.sub(r"\1\1", text)
+
+    data['content'] = data['content'].apply(lambda x: " ".join(de_repeat(x) for x in x.split()))
+
+    # Code to find the top 10,000 rarest words appearing in the data
+    freq = pd.Series(' '.join(data['content']).split()).value_counts()[-10000:]
+
+    # Removing all those rarely appearing words from the data
+    freq = list(freq.index)
+    data['content'] = data['content'].apply(lambda x: " ".join(x for x in x.split() if x not in freq))
+
+    #Encoding output labels 'sadness' as '1' & 'happiness' as '0'
+    lbl_enc = preprocessing.LabelEncoder()
+    y = lbl_enc.fit_transform(data.sentiment.values)
+
+    # Splitting into training and testing data in 90:10 ratio
+    X_train, X_val, y_train, y_val = train_test_split(data.content.values, y, stratify=y, random_state=42, test_size=0.1, shuffle=True)
+
+    # Extracting TF-IDF parameters
+    tfidf = TfidfVectorizer(max_features=1000, analyzer='word',ngram_range=(1,3))
+    X_train_tfidf = tfidf.fit_transform(X_train)
+    X_val_tfidf = tfidf.fit_transform(X_val)
+
+    # Extracting Count Vectors Parameters
+    count_vect = CountVectorizer(analyzer='word')
+    count_vect.fit(data['content'])
+    X_train_count =  count_vect.transform(X_train)
+    X_val_count =  count_vect.transform(X_val)
+
+
+    # Model : Linear SVM
+    lsvm = SGDClassifier(alpha=0.001, random_state=5, max_iter=15, tol=None)
+    lsvm.fit(X_train_tfidf, y_train)
+    y_pred = lsvm.predict(X_val_tfidf)
+    
+    
+    ## Building models using count vectors feature
+    
+    # Model 2: Linear SVM
+    lsvm = SGDClassifier(alpha=0.001, random_state=5, max_iter=15, tol=None)
+    lsvm.fit(X_train_count, y_train)
+    y_pred = lsvm.predict(X_val_count)
+    
+    #Predicting
+    tweets = pd.DataFrame(inputs)
+
+    # Doing some preprocessing on these tweets as done before
+    tweets[0] = tweets[0].str.replace('[^\w\s]',' ')
+    from nltk.corpus import stopwords
+    stop = stopwords.words('english')
+    tweets[0] = tweets[0].apply(lambda x: " ".join(x for x in x.split() if x not in stop))
+    from textblob import Word
+    tweets[0] = tweets[0].apply(lambda x: " ".join([Word(word).lemmatize() for word in x.split()]))
+
+    # Extracting Count Vectors feature from our tweets
+    tweet_count = count_vect.transform(tweets[0])
+
+    #Predicting the emotion of the tweet using our already trained linear SVM
+    tweet_pred = lsvm.predict(tweet_count)
+    return tweet_pred
+
 
 
 
@@ -208,20 +322,34 @@ class MainThread(QThread):
             #speak("Sorry Can you please repeat..")
             return "none"
         return self.query1
+    
+    
+    
+    
+
 
     #************************function for all the tasks***********************************************
 
     def TaskExecution(self):
         startup()
+        self.query1 = self.take_command().lower()
+        inputs=[""]
+        inputs[0]=self.query1
+        mood=moodDetect(inputs)
         while True:
-            self.query1 = self.take_command().lower()
+          
             # logic building for jarvis
 
             # *************************************************to Open notepad ***************************************
-
-            if "hello" in self.query1:
-                speak("I am fine sir...")
-                speak("what about you ...")
+            
+            speak("Very well sir. How may i help you?")
+            self.query1 = self.take_command().lower()
+        
+            if "suggest me" in self.query1:
+                if(mood[0]==0):
+                    webbrowser.open('https://www.youtube.com/watch?v=LjhCEhWiKXk&list=PL1VuYyZcPYIJTP3W_x0jq9olXviPQlOe1')
+                else:
+                    webbrowser.open('https://www.youtube.com/watch?v=Y2NkuFIlLEo&list=PLgzTt0k8mXzHcKebL8d0uYHfawiARhQja')
 
             elif "open notepad" in self.query1:
                 speak("opening notepad for you sir")
@@ -717,6 +845,8 @@ class MainThread(QThread):
             elif "goodbye" in self.query1:
                  speak("Thanks for using me sir,have a nice day")
                  sys.exit()
+                
+       
 
 
 #***************************************Main program******************************************************
